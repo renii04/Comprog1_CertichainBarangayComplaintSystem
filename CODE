@@ -1,0 +1,321 @@
+import java.io.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.regex.*;
+import java.util.stream.Collectors;
+
+public class BarangayComplaintSystem {
+    private static final String DATA_FILE = "complaints.txt";
+    private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+
+    // ==================== 1. EXCEPTION HANDLING ====================
+    static class SystemException extends Exception {
+        SystemException(String msg) { super(msg); }
+    }
+    // ==================== 2. ENUMERATIONS ====================
+    enum CrimeType {
+        ROBBERY("Robbery"), ASSAULT("Assault"), HARASSMENT("Harassment"), MISSING_PERSON("Missing Person"), OTHERS("Others");
+        private final String name;
+        CrimeType(String name) { name = name; }
+        public String getName() { return name; }
+    }
+
+    enum Status {
+        PENDING("Pending"), RESOLVED("Resolved");
+        private final String label;
+        Status(String label) { label = label; }
+        public String getLabel() { return label; }
+    }
+
+    enum Role {
+        INVESTIGATOR("INVESTIGATOR", new String[]{"CREATE", "VIEW", "UPDATE", "FORWARD"}),
+        ADMIN("ADMIN", new String[]{"CREATE", "VIEW", "UPDATE", "FORWARD", "DELETE"});
+        private final String role;
+        private final String[] perms;
+        Role(String role, String[] perms) { role = role; perms = perms; }
+        public boolean can(String action) { return Arrays.asList(perms).contains(action); }
+    }
+
+    // ==================== 3. INTERFACES ====================
+    interface Entity {
+        String serialize();
+        void display();
+    }
+
+    // ==================== 4. CLASSES & INHERITANCE ====================
+    static class Person {
+        protected String id, name, contact;
+        Person(String id, String name, String contact) { id = id; name = name; contact = contact; }
+        public String getId() { return id; }
+        public String getName() { return name; }
+    }
+
+    static class User extends Person {
+        Role role;
+        User(String id, String name, String contact, Role role) {
+            super(id, name, contact);
+            role = role;
+        }
+        public boolean hasPermission(String action) { return role.can(action); }
+    }
+
+    static class Complaint implements Entity {
+        private String id, description, date, location;
+        private CrimeType crime;
+        private Status status;
+        private LocalDateTime created;
+        private Person reporter;
+        private List<String> logs = new ArrayList<>();
+
+        Complaint(String id, Person reporter, CrimeType crime, String desc, String date, String location) {
+            id = id;
+            reporter = reporter;
+            crime = crime;
+            description = desc;
+            date = date;
+            location = location;
+            status = Status.PENDING;
+            created = LocalDateTime.now();
+            logs.add("[" + DF.format(created) + "] Complaint Created");
+        }
+
+        public void updateStatus(Status newStatus, String reason) {
+            status = newStatus;
+            logs.add("[" + DF.format(LocalDateTime.now()) + "] Status: " + reason);
+        }
+
+        @Override
+        public String serialize() {
+            return String.format("%s|%s|%s|%s|%s|%s|%s", id, reporter.getName(), crime.name(), date, location, status.name(), created);
+        }
+
+        @Override
+        public void display() {
+            System.out.printf("\n[%s] %s | Crime: %s | Status: %s | Date: %s | Location: %s\nDescription: %s\n",
+                id, reporter.getName(), crime.getName(), status.getLabel(), date, location, description);
+            System.out.println("--- Logs ---");
+            logs.forEach(System.out::println);
+        }
+
+        // ==================== 5. NESTED CLASS ====================
+        static class Validator {
+            private static final Pattern DATE_P = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
+            private static final Pattern NAME_P = Pattern.compile("^[a-zA-Z\\s]{2,100}$");
+            private static final Pattern PHONE_P = Pattern.compile("^\\d{10,11}$");
+            private static final Pattern LOC_P = Pattern.compile("^[a-zA-Z\\s0-9,.-]{3,100}$");
+
+            // ==================== 6. REGULAR EXPRESSIONS ====================
+            static void validateDate(String date) throws SystemException {
+                if (!DATE_P.matcher(date).matches()) throw new SystemException("Invalid date (YYYY-MM-DD)");
+            }
+
+            static void validateName(String name) throws SystemException {
+                if (!NAME_P.matcher(name).matches()) throw new SystemException("Invalid name");
+            }
+
+            static void validatePhone(String phone) throws SystemException {
+                if (!PHONE_P.matcher(phone).matches()) throw new SystemException("Invalid phone");
+            }
+
+            static void validateLocation(String loc) throws SystemException {
+                if (!LOC_P.matcher(loc).matches()) throw new SystemException("Invalid location");
+            }
+        }
+    }
+
+    // ==================== FILE I/O ====================
+    static class FileManager {
+        static void save(List<Complaint> complaints) throws SystemException {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
+                for (Complaint c : complaints) {
+                    bw.write(c.serialize());
+                    bw.newLine();
+                }
+            } catch (IOException e) {
+                throw new SystemException("Save failed");
+            }
+        }
+
+        static List<Complaint> load() throws SystemException {
+            List<Complaint> list = new ArrayList<>();
+            File f = new File(DATA_FILE);
+            if (!f.exists()) return list;
+
+            try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String[] parts = line.split("\\|");
+                    if (parts.length >= 7) {
+                        Person p = new Person("REP", parts[1], "N/A");
+                        Complaint c = new Complaint(parts[0], p, CrimeType.valueOf(parts[2]), "Loaded", parts[3], parts[4]);
+                        c.status = Status.valueOf(parts[5]);
+                        list.add(c);
+                    }
+                }
+            } catch (IOException e) {
+                throw new SystemException("Load failed");
+            }
+            return list;
+        }
+
+        static void export(Complaint c, String filename) throws SystemException {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(filename))) {
+                bw.write("ID: " + c.id + "\nReporter: " + c.reporter.getName() + "\nCrime: " + c.crime.getName() + 
+                         "\nStatus: " + c.status.getLabel() + "\nDate: " + c.date + "\nLocation: " + c.location);
+                System.out.println("Exported to: " + filename);
+            } catch (IOException e) {
+                throw new SystemException("Export failed");
+            }
+        }
+    }
+
+    // ==================== MANAGER ====================
+    static class ComplaintManager {
+        private List<Complaint> complaints = new ArrayList<>();
+        private int counter = 1001;
+
+        void load() throws SystemException {
+            complaints = FileManager.load();
+            if (!complaints.isEmpty()) counter = 1001 + complaints.size();
+        }
+
+        void save() throws SystemException { FileManager.save(complaints); }
+
+        Complaint create(Person reporter, CrimeType crime, String desc, String date, String loc) throws SystemException {
+            Complaint.Validator.validateDate(date);
+            Complaint.Validator.validateLocation(loc);
+            Complaint c = new Complaint("CMP-" + (counter++), reporter, crime, desc, date, loc);
+            complaints.add(c);
+            return c;
+        }
+
+        Complaint findById(String id) throws SystemException {
+            return complaints.stream().filter(c -> c.id.equals(id)).findFirst()
+                .orElseThrow(() -> new SystemException("Not found"));
+        }
+
+        List<Complaint> getAll() { return new ArrayList<>(complaints); }
+
+        void updateStatus(String id, Status s, String reason) throws SystemException {
+            findById(id).updateStatus(s, reason);
+        }
+
+        void forward(String id, User staff) throws SystemException {
+            if (!staff.hasPermission("FORWARD")) throw new SystemException("No permission");
+            findById(id).updateStatus(Status.FORWARDED, "By " + staff.getName());
+        }
+    }
+
+    // ==================== MAIN SCREEN NA TO====================
+    public static void main(String[] args) {
+        System.out.println("\n===== BARANGAY COMPLAINT SYSTEM =====\n");
+
+        ComplaintManager mgr = new ComplaintManager();
+        User staff = new User("S001", "Maria", "09171234567", Role.INVESTIGATOR);
+        Scanner sc = new Scanner(System.in);
+
+        try { mgr.load(); } catch (SystemException e) { System.out.println(e.getMessage()); }
+
+        boolean running = true;
+        while (running) {
+            System.out.println("\n1. Create  2. View  3. Search  4. Forward  5. Update  6. Stats  7. Exit");
+            System.out.print("Choice: ");
+            try {
+                switch (sc.nextInt()) {
+                    case 1 -> createComplaint(mgr, staff, sc);
+                    case 2 -> viewAll(mgr);
+                    case 3 -> search(mgr, sc);
+                    case 4 -> forward(mgr, staff, sc);
+                    case 5 -> updateStatus(mgr, sc);
+                    case 6 -> showStats(mgr);
+                    case 7 -> { mgr.save(); running = false; }
+                    default -> System.out.println("Invalid");
+                }
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void createComplaint(ComplaintManager mgr, User staff, Scanner sc) {
+        try {
+            sc.nextLine();
+            System.out.print("Name: "); String name = sc.nextLine();
+            Complaint.Validator.validateName(name);
+            System.out.print("Phone: "); String phone = sc.nextLine();
+            Complaint.Validator.validatePhone(phone);
+            System.out.print("Address: "); String addr = sc.nextLine();
+
+            System.out.println("Crime Types:");
+            CrimeType[] crimes = CrimeType.values();
+            for (int i = 0; i < crimes.length; i++) System.out.printf("%d. %s\n", i + 1, crimes[i].getName());
+            System.out.print("Select: ");
+            CrimeType crime = crimes[sc.nextInt() - 1];
+
+            sc.nextLine();
+            System.out.print("Description: "); String desc = sc.nextLine();
+            System.out.print("Date (YYYY-MM-DD): "); String date = sc.nextLine();
+            System.out.print("Location: "); String loc = sc.nextLine();
+
+            Person reporter = new Person("REP-" + System.currentTimeMillis(), name, phone);
+            Complaint c = mgr.create(reporter, crime, desc, date, loc);
+            System.out.println("Created! ID: " + c.id);
+            c.display();
+            mgr.save();
+        } catch (SystemException e) { System.out.println("Error: " + e.getMessage()); }
+    }
+
+    private static void viewAll(ComplaintManager mgr) {
+        List<Complaint> list = mgr.getAll();
+        System.out.printf("\n%-8s | %-15s | %-15s | %s\n", "ID", "Crime", "Reporter", "Status");
+        list.forEach(c -> System.out.printf("%-8s | %-15s | %-15s | %s\n", c.id, c.crime.getName(), c.reporter.getName(), c.status.getLabel()));
+    }
+
+    private static void search(ComplaintManager mgr, Scanner sc) {
+        try {
+            sc.nextLine();
+            System.out.print("ID: ");
+            Complaint c = mgr.findById(sc.nextLine());
+            c.display();
+            System.out.print("Export? (y/n): ");
+            if (sc.nextLine().equalsIgnoreCase("y")) FileManager.export(c, c.id + ".txt");
+        } catch (SystemException e) { System.out.println("Error: " + e.getMessage()); }
+    }
+
+    private static void forward(ComplaintManager mgr, User staff, Scanner sc) {
+        try {
+            sc.nextLine();
+            System.out.print("ID: ");
+            mgr.forward(sc.nextLine(), staff);
+            mgr.save();
+            System.out.println("Forwarded!");
+        } catch (SystemException e) { System.out.println("Error: " + e.getMessage()); }
+    }
+
+    private static void updateStatus(ComplaintManager mgr, Scanner sc) {
+        try {
+            sc.nextLine();
+            System.out.print("ID: ");
+            Complaint c = mgr.findById(sc.nextLine());
+            Status[] statuses = Status.values();
+            for (int i = 0; i < statuses.length; i++) System.out.printf("%d. %s\n", i + 1, statuses[i].getLabel());
+            System.out.print("Select: ");
+            Status s = statuses[sc.nextInt() - 1];
+            sc.nextLine();
+            System.out.print("Reason: ");
+            mgr.updateStatus(c.id, s, sc.nextLine());
+            mgr.save();
+        } catch (SystemException e) { System.out.println("Error: " + e.getMessage()); }
+    }
+
+    private static void showStats(ComplaintManager mgr) {
+        List<Complaint> list = mgr.getAll();
+        System.out.println("\nTotal: " + list.size());
+        System.out.println("By Status:");
+        Arrays.stream(Status.values()).forEach(s -> {
+            long c = list.stream().filter(comp -> comp.status == s).count();
+            if (c > 0) System.out.printf("  %s: %d\n", s.getLabel(), c);
+        });
+    }
+}
