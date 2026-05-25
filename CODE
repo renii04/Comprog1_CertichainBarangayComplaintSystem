@@ -1,3 +1,13 @@
+/*
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+ */
+
+package com.mycompany.barangaycomplaintsystem;
+
+/**
+ *
+ * @author Nick
+ */
 import java.io.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -13,27 +23,28 @@ public class BarangayComplaintSystem {
     static class SystemException extends Exception {
         SystemException(String msg) { super(msg); }
     }
+
     // ==================== 2. ENUMERATIONS ====================
     enum CrimeType {
         ROBBERY("Robbery"), ASSAULT("Assault"), HARASSMENT("Harassment"), MISSING_PERSON("Missing Person"), OTHERS("Others");
         private final String name;
-        CrimeType(String name) { name = name; }
+        CrimeType(String crimeTypeName) { name = crimeTypeName; }
         public String getName() { return name; }
     }
 
     enum Status {
         PENDING("Pending"), RESOLVED("Resolved");
         private final String label;
-        Status(String label) { label = label; }
+        Status(String statusLabel) { label = statusLabel; }
         public String getLabel() { return label; }
     }
 
     enum Role {
-        INVESTIGATOR("INVESTIGATOR", new String[]{"CREATE", "VIEW", "UPDATE", "FORWARD"}),
-        ADMIN("ADMIN", new String[]{"CREATE", "VIEW", "UPDATE", "FORWARD", "DELETE"});
+        INVESTIGATOR("INVESTIGATOR", new String[]{"CREATE", "VIEW", "UPDATE"}),
+        ADMIN("ADMIN", new String[]{"CREATE", "VIEW", "UPDATE", "DELETE"});
         private final String role;
         private final String[] perms;
-        Role(String role, String[] perms) { role = role; perms = perms; }
+        Role(String roleName, String[] permissions) { role = roleName; perms = permissions; }
         public boolean can(String action) { return Arrays.asList(perms).contains(action); }
     }
 
@@ -46,16 +57,20 @@ public class BarangayComplaintSystem {
     // ==================== 4. CLASSES & INHERITANCE ====================
     static class Person {
         protected String id, name, contact;
-        Person(String id, String name, String contact) { id = id; name = name; contact = contact; }
+        Person(String personId, String personName, String personContact) { 
+            id = personId; 
+            name = personName; 
+            contact = personContact; 
+        }
         public String getId() { return id; }
         public String getName() { return name; }
     }
 
     static class User extends Person {
         Role role;
-        User(String id, String name, String contact, Role role) {
-            super(id, name, contact);
-            role = role;
+        User(String userId, String userName, String userContact, Role userRole) {
+            super(userId, userName, userContact);
+            role = userRole;
         }
         public boolean hasPermission(String action) { return role.can(action); }
     }
@@ -68,13 +83,13 @@ public class BarangayComplaintSystem {
         private Person reporter;
         private List<String> logs = new ArrayList<>();
 
-        Complaint(String id, Person reporter, CrimeType crime, String desc, String date, String location) {
-            id = id;
-            reporter = reporter;
-            crime = crime;
-            description = desc;
-            date = date;
-            location = location;
+        Complaint(String complaintId, Person complaintReporter, CrimeType crimeType, String complaintDesc, String complaintDate, String complaintLocation) {
+            id = complaintId;
+            reporter = complaintReporter;
+            crime = crimeType;
+            description = complaintDesc;
+            date = complaintDate;
+            location = complaintLocation;
             status = Status.PENDING;
             created = LocalDateTime.now();
             logs.add("[" + DF.format(created) + "] Complaint Created");
@@ -200,16 +215,13 @@ public class BarangayComplaintSystem {
         void updateStatus(String id, Status s, String reason) throws SystemException {
             findById(id).updateStatus(s, reason);
         }
-
-        void forward(String id, User staff) throws SystemException {
-            if (!staff.hasPermission("FORWARD")) throw new SystemException("No permission");
-            findById(id).updateStatus(Status.FORWARDED, "By " + staff.getName());
-        }
     }
-
-    // ==================== MAIN SCREEN NA TO====================
+    // ==================== MAIN SCREEN ====================
     public static void main(String[] args) {
-        System.out.println("\n===== BARANGAY COMPLAINT SYSTEM =====\n");
+        System.out.println("    COMPUTER PROGRAMMING 2 FINAL PROJECT");
+        System.out.println("                CertiChain");
+        System.out.println("        BARANGAY COMPLAINT SYSTEM  \n");
+        System.out.println("");
 
         ComplaintManager mgr = new ComplaintManager();
         User staff = new User("S001", "Maria", "09171234567", Role.INVESTIGATOR);
@@ -219,23 +231,29 @@ public class BarangayComplaintSystem {
 
         boolean running = true;
         while (running) {
-            System.out.println("\n1. Create  2. View  3. Search  4. Forward  5. Update  6. Stats  7. Exit");
-            System.out.print("Choice: ");
+            System.out.println("1. Create");
+            System.out.println("2. View");
+            System.out.println("3. Search");
+            System.out.println("4. Update");
+            System.out.println("5. Stats");
+            System.out.println("6. Exit");
+            System.out.println("");
+            System.out.print("Please enter of your choice: ");
             try {
                 switch (sc.nextInt()) {
                     case 1 -> createComplaint(mgr, staff, sc);
                     case 2 -> viewAll(mgr);
                     case 3 -> search(mgr, sc);
-                    case 4 -> forward(mgr, staff, sc);
-                    case 5 -> updateStatus(mgr, sc);
-                    case 6 -> showStats(mgr);
-                    case 7 -> { mgr.save(); running = false; }
+                    case 4 -> updateStatus(mgr, sc);
+                    case 5 -> showStats(mgr);
+                    case 6 -> { mgr.save(); running = false; }
                     default -> System.out.println("Invalid");
                 }
             } catch (Exception e) {
                 System.out.println("Error: " + e.getMessage());
             }
         }
+        System.out.println("\n===== Thank You! =====\n");
     }
 
     private static void createComplaint(ComplaintManager mgr, User staff, Scanner sc) {
@@ -247,7 +265,7 @@ public class BarangayComplaintSystem {
             Complaint.Validator.validatePhone(phone);
             System.out.print("Address: "); String addr = sc.nextLine();
 
-            System.out.println("Crime Types:");
+            System.out.println("\nCrime Types:");
             CrimeType[] crimes = CrimeType.values();
             for (int i = 0; i < crimes.length; i++) System.out.printf("%d. %s\n", i + 1, crimes[i].getName());
             System.out.print("Select: ");
@@ -280,16 +298,6 @@ public class BarangayComplaintSystem {
             c.display();
             System.out.print("Export? (y/n): ");
             if (sc.nextLine().equalsIgnoreCase("y")) FileManager.export(c, c.id + ".txt");
-        } catch (SystemException e) { System.out.println("Error: " + e.getMessage()); }
-    }
-
-    private static void forward(ComplaintManager mgr, User staff, Scanner sc) {
-        try {
-            sc.nextLine();
-            System.out.print("ID: ");
-            mgr.forward(sc.nextLine(), staff);
-            mgr.save();
-            System.out.println("Forwarded!");
         } catch (SystemException e) { System.out.println("Error: " + e.getMessage()); }
     }
 
